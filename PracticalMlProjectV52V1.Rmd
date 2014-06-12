@@ -1,0 +1,192 @@
+**Coursera Practical Machine Learning Course Project** 
+**June 2014**
+  
+  
+*****  
+**Goals**  
+*****
+  
+The project requirements according to the project write up are:  
+  
+- Predict the manner in which they did the exercise  
+- Predict the "classe" variable in the training set  
+- Use any of the other variables to predict with  
+- Create a report describing how you built your model  
+- Build a machine-learning algorithm to predict activity quality from activity monitors  
+- How did you use cross validation?  
+- What do you think the expected out of sample error is?  
+- Use your prediction model to predict 20 different test cases  
+- Why you made the choices you did?  
+  
+This report is organized in a similar manner.  
+  
+**Notes**  
+1. I would like to thank all my peers for their valuable comments, and contributions in the discussion forums.   
+2. Parts of the code snippets have been commented using "#"", since generating the HTML page would otherwise be time consuming. To uncomment the code delete the "#"" characters. 
+3. Sorry for some of the formatting. The R Knit package could be improved (It's not entirely predictable).   
+4. The following publication was used as a source for this course project:  
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.  
+  
+*****
+**Data Loading**  
+*****
+  
+The data sets used can be downloaded from:  
+  
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv  
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv  
+  
+The data sets are loaded from pml-training.csv and pml-testing.csv, which must be in the working directory. 
+  
+```{r}  
+setwd("~/Documents/PracticalMlProject")  
+library(caret)  
+trainRaw <- read.csv(file="pml-training.csv",head=TRUE, na.strings=c("NA",""))  
+testRaw <- read.csv(file="pml-testing.csv",head=TRUE, na.strings=c("NA",""))  
+```  
+  
+*****
+**Data Cleaning**  
+*****
+  
+The data sets are first cleaned for invalid values such as NA’s, and blank spaces. Some of the columns contain a very large number of such values, and these columns have been removed, rather than trying to impute values.  
+
+```{r}  
+invalid <- apply(trainRaw,2,function(x) {sum(is.na(x))})  
+train1 <- trainRaw[,which(invalid == 0)]  
+```  
+   
+*****
+**Feature Selection**  
+*****
+  
+Some of the features (predictor variables) have been deemed useless for the following reasons, and discarded from the data set:  
+  
+- When it’s not clear how the variable is measured.  
+- When it doesn't appear to be a sensor reading. The goal of HAR (human activity recognition) studies is to predict activities using sensors.  
+- When a variable is related to the sequence of the experiments. Examples are new_window, and num_windows. If the experiments for the “classe” categories are not in a random sequence, it's no surprise that only using the num_windows variable results in an accuracy of 100%.  
+- When a predictor is 100% correlated to what it's supposed to predict. It seems suspicious when one predictor can predict the result with 100% accuracy.  
+- A person’s id/name is not a sensor measurement, although a particular person may consistently exhibit consistent results.  
+- Time should not impact the weight lifting activities, unless fatigue at late hours is an issue. 
+  
+Concretely X, user_name, time variables, new window, and num__window have been discarded. Thus 52 predictor variables are used to predict the variable “classe”.    
+    
+```{r}  
+useless  <- grep("X|user_name|timestamp|new_window|num_window", names(trainRaw))  
+train2 <- train1[,-useless]  
+```  
+  
+*****
+**Data Splicing**  
+*****
+  
+Random selection without replacement was chosen to split the data set into a training set (70%) and a cross validation set (30%), because it's a simple method.   
+  
+The training set needs to be large enough to achieve a relatively high accuracy, and the cross validation set also needs to be large enough to give a good indication of the out of sample error. A test set isn't needed, since it’s given.  
+  
+```{r}  
+set.seed(1234)  
+inTrain = createDataPartition(train2$classe, p = 0.7)[[1]]  
+train = train2[ inTrain,]  
+cross = train2[-inTrain,]  
+```  
+  
+*****
+**Model Building / Algorithm Selection**  
+*****
+  
+When building a model and selecting an algorithm the following criteria can be considered: Accuracy, performance, simplicity, interpretability, and scalability. Here are my priorities as they relate to each criterion.  
+  
+**Accuracy**  
+Very important. The model has to accurately predict 20 test cases.  
+  
+**Performance**  
+Not a priority. However the algorithm must be able to complete training in 3 hours or less on the available hardware (MacBook Pro, 2.6 GHZ, 2 cores, 4 GB ram, 64 bit, Mac OS X 10.9.3).  
+  
+**Scalability**  
+The algorithm must be able to scale to the training set of 19622 observations.  
+  
+**Simplicity**  
+Is a priority in the sense that it must be relatively simple to select a combination of predictors from the initial set of 159.  
+  
+**Interpretability**  
+Not a priority, since the ultimate goal is accurately predicting the test cases.    
+  
+Accuracy is the ultimate goal. It therefore makes sense to try a highly accurate algorithm such as random forest. It also makes sense not to use principal component analysis (PCA) to reduce the number of features, since PCA will reduce the accuracy. The choice is therefore to use a **random forest algorithm** on **52 predictor variables** (method = "rf").  
+  
+Only if the prediction accuracy or running time using this model is not acceptable will the preprocessing steps, the model, or performance tuning parameters be adjusted, through further iterations.  
+
+Initially the training took around 2 hours on the available hardware. The trainControl parameters were therefore added to reduce the training duration to less than 20 minutes .
+  
+*****
+**Training**  
+*****
+  
+Once the data set and the training method has been specified the training is straightforward.  
+  
+```{r}  
+control <- trainControl(method = "cv", number = 5)  
+startTime <- Sys.time()    
+model52 <- train(train$classe ~ ., data=train, method="rf", trControl = control) 
+endTime <- Sys.time()   
+model52  
+accuracy <- max(model52$results[,2])   
+duration <- endTime - startTime  
+samplesize <- dim(train)[1]  
+method <- model52$method  
+```  
+  
+Training duration: ~ 19 minutes  
+Accuracy: 0.992  
+Sample size: 13737 (70% of 19622)  
+Method: “rf”  
+  
+The above results meet the requirements in terms of accuracy, and duration. In fact the accuracy is much higher than expected, and the duration is perfectly acceptable for this project.    
+  
+*****
+**Predictions, cross validation, and out of sample error**  
+*****
+  
+Generating a set of predictions for the training set, the cross validation set and the test set is straightforward.  
+  
+By predicting "classe" in the cross validation data, and comparing the predictions with the actual values an estimate of the accuracy, and the the out of sample error can be obtained. A high accuracy corresponds to a low error. The calculated prediction accuracy of 99% for the cross validation set is perfectly acceptable. Thus no adjustments to the selected features, the preprocessing steps, the algorithm, or the tuning parameters are needed.  
+  
+```{r}  
+predTrain <- predict(model52$finalModel, newdata = train)  
+predCross <- predict(model52$finalModel, newdata = cross)  
+```  
+  
+The confusion matrix is used for calculating accuracy, and for estimating the out of sample error.  
+The estimated error rate is 0.69% according to the final model.  
+The error rate for the cross validation set is 0.51%, which is very low.  
+The actual error rate for the test set is 0%.  
+  
+```{r}  
+confusion52 <-confusionMatrix(table(predCross, cross$classe))  
+confusion52
+```  
+  
+*****
+**Predict 20 Test Cases**  
+*****
+  
+The predict function, the final model, and the test data set is used to predict the "classe" values for the test data.  The resulting predictions for the 20 test cases are 100% accurate (The error rate is 0%). Here are the 20 predictions:  
+  
+"B" "A" "B" "A" "A" "E" "D" "B" "A" "A" "B" "C" "B" "A" "E" "E" "A" "B" "B" "B"  
+  
+```{r}  
+invalid <- apply(testRaw,2,function(x) {sum(is.na(x))})  
+test1 <- testRaw[,which(invalid == 0)]  
+useless  <- grep("X|user_name|timestamp|new_window|num_window", names(testRaw))  
+test <- test1[,-useless]  
+  
+predTest <- predict(model52$finalModel, newdata = test)  
+answers <- as.character(predTest)  
+answers  
+```  
+  
+*****
+V52V1 - 06/12/2014  
+*****
+  
+  
